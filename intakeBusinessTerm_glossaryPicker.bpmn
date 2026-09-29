@@ -1,0 +1,238 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:flowable="http://flowable.org/bpmn" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC" xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI" xmlns:design="http://flowable.org/design" typeLanguage="http://www.w3.org/2001/XMLSchema" expressionLanguage="http://www.w3.org/1999/XPath" targetNamespace="http://www.collibra.com/apiv2" design:palette="flowable-process-palette">
+  <collaboration id="Collaboration">
+    <participant id="pool1" name="Intake Business Term" processRef="intakeBusinessTerm"></participant>
+  </collaboration>
+  <process id="intakeBusinessTerm" name="Propose New Business Term" isExecutable="true">
+    <documentation>This process can be used to propose new business terms or acronyms. The user selects the Glossary domain the new asset should be created in, and the asset is created using the entered characteristics.</documentation>
+    <extensionElements>
+      <design:stencilid><![CDATA[BPMNDiagram]]></design:stencilid>
+      <design:creationdate><![CDATA[2024-02-21T17:11:21.714Z]]></design:creationdate>
+      <design:modificationdate><![CDATA[2026-09-29T12:00:00.000Z]]></design:modificationdate>
+    </extensionElements>
+    <laneSet id="laneSet_intakeBusinessTerm">
+      <lane id="lane1">
+        <flowNodeRef>startevent1</flowNodeRef>
+        <flowNodeRef>getGlossaryDomains</flowNodeRef>
+        <flowNodeRef>proposeTerm</flowNodeRef>
+        <flowNodeRef>createAsset</flowNodeRef>
+        <flowNodeRef>endevent1</flowNodeRef>
+        <flowNodeRef>flow0</flowNodeRef>
+        <flowNodeRef>flow0b</flowNodeRef>
+        <flowNodeRef>flow1</flowNodeRef>
+        <flowNodeRef>flow2</flowNodeRef>
+      </lane>
+    </laneSet>
+
+    <!-- Start: no visible form. The glossary list must be built before the form is rendered. -->
+    <startEvent id="startevent1" name="Start" flowable:initiator="initiator" flowable:formFieldValidation="false">
+      <extensionElements>
+        <design:stencilid><![CDATA[StartNoneEvent]]></design:stencilid>
+      </extensionElements>
+    </startEvent>
+
+    <!-- Look up every domain of type Glossary (and its sub-types) and expose the IDs as a comma-separated list -->
+    <scriptTask id="getGlossaryDomains" name="Get Glossary Domains" scriptFormat="groovy" flowable:autoStoreVariables="false">
+      <extensionElements>
+        <design:stencilid><![CDATA[ScriptTask]]></design:stencilid>
+      </extensionElements>
+      <script><![CDATA[
+       // #importFile NONE
+       import com.collibra.dgc.core.api.dto.instance.domain.FindDomainsRequest;
+
+       // Glossary domain type
+       def glossaryDomainTypeUuid = "00000000-0000-0000-0000-000000010001"
+       // Fallback domain if no Glossary domains are found (original default intake vocabulary)
+       def fallbackDomainUuid = "00000000-0000-0000-0000-000000006013"
+
+       def ids = []
+       int offset = 0
+       int limit = 500
+       try {
+           loggerApi.info("[intakeBusinessTerm] Looking up Glossary domains")
+           while (true) {
+               def page = domainApi.findDomains(FindDomainsRequest.builder()
+                   .typeId(string2Uuid(glossaryDomainTypeUuid))
+                   .offset(offset)
+                   .limit(limit)
+                   .build())
+               def results = page.getResults()
+               results.each { d -> ids.add(uuid2String(d.getId())) }
+               if (results.size() < limit) { break }
+               offset += limit
+           }
+           loggerApi.info("[intakeBusinessTerm] Found " + ids.size() + " Glossary domain(s)")
+       } catch (Exception e) {
+           loggerApi.error("[intakeBusinessTerm] Glossary domain lookup failed: " + e.getClass().getName() + " - " + e.getMessage())
+           throw e
+       }
+
+       if (ids.isEmpty()) {
+           ids.add(fallbackDomainUuid)
+       }
+
+       execution.setVariable("glossaryDomainIds", ids.join(","))
+      ]]></script>
+    </scriptTask>
+
+    <!-- The proposal form, assigned to the person who started the workflow -->
+    <userTask id="proposeTerm" name="Propose Business Term" flowable:candidateUsers="user(${initiator})" flowable:formFieldValidation="false">
+      <extensionElements>
+        <flowable:formProperty id="intakeVocabulary" name="Glossary" type="domain" required="true">
+          <flowable:value id="proposedValues" name="${glossaryDomainIds}"></flowable:value>
+          <flowable:value id="proposedFixed" name="true"></flowable:value>
+          <flowable:value id="multiValue" name="false"></flowable:value>
+          <flowable:value id="helpText" name="Select the Glossary domain the new term or acronym should be created in."></flowable:value>
+        </flowable:formProperty>
+        <flowable:formProperty id="signifier" name="Name" type="string" required="true"></flowable:formProperty>
+        <flowable:formProperty id="conceptType" name="Type" type="assetType" required="true">
+          <flowable:value id="proposedFixed" name="true"></flowable:value>
+          <flowable:value id="multiValue" name="false"></flowable:value>
+          <flowable:value id="proposedValues" name="00000000-0000-0000-0000-000000011001,00000000-0000-0000-0000-000000011003"></flowable:value>
+        </flowable:formProperty>
+        <flowable:formProperty id="definition" name="Proposed Definition" type="textarea"></flowable:formProperty>
+        <flowable:formProperty id="usesrelation" name="Related Assets" type="term">
+          <flowable:value id="multiValue" name="true"></flowable:value>
+          <flowable:value id="conceptType" name="00000000-0000-0000-0000-000000031000"></flowable:value>
+        </flowable:formProperty>
+        <flowable:formProperty id="note" name="Reason for proposal" type="textarea"></flowable:formProperty>
+        <flowable:formProperty id="submit" name="Propose" type="button" default="false"></flowable:formProperty>
+        <flowable:formProperty id="usesRelationTypeUuid" name="Uses Relation Type UUID" type="string" default="00000000-0000-0000-0000-000000007004" readable="false"></flowable:formProperty>
+        <flowable:formProperty id="definitionAttributeTypeUuid" name="Definition Attribute Type UUID" type="string" default="00000000-0000-0000-0000-000000000202" readable="false"></flowable:formProperty>
+        <flowable:formProperty id="noteAttributeTypeUuid" name="Note Attribute Type UUID" type="string" default="00000000-0000-0000-0000-000000003116" readable="false"></flowable:formProperty>
+        <flowable:work-form-field-validation><![CDATA[false]]></flowable:work-form-field-validation>
+        <design:stencilid><![CDATA[UserTask]]></design:stencilid>
+      </extensionElements>
+    </userTask>
+
+    <scriptTask id="createAsset" name="Create Asset" scriptFormat="groovy" flowable:autoStoreVariables="false">
+      <extensionElements>
+        <design:stencilid><![CDATA[ScriptTask]]></design:stencilid>
+      </extensionElements>
+      <script><![CDATA[
+       // #importFile NONE
+       import com.collibra.dgc.core.api.dto.instance.asset.AddAssetRequest;
+       import com.collibra.dgc.core.api.dto.instance.attribute.AddAttributeRequest;
+       import com.collibra.dgc.core.api.dto.instance.relation.AddRelationRequest;
+
+       def note = execution.getVariable("note")
+       def definition = execution.getVariable("definition")
+       def usesrelation = execution.getVariable("usesrelation")
+       def selectedDomain = execution.getVariable("intakeVocabulary")
+
+       def newAssetUuid = assetApi.addAsset(AddAssetRequest.builder()
+           .name(signifier)
+           .displayName(signifier)
+           .typeId(toUuid(conceptType))
+           .domainId(toUuid(selectedDomain))
+           .build()).getId()
+
+       addAttributeToAsset(newAssetUuid, definition, definitionAttributeTypeUuid)
+       addAttributeToAsset(newAssetUuid, note, noteAttributeTypeUuid)
+       addRelationsWithOneSourceAndMultipleTargetsToAsset(newAssetUuid, usesRelationTypeUuid, usesrelation)
+
+       execution.setVariable("outputCreatedTermId", uuid2String(newAssetUuid))
+
+       // The domain form field returns a UUID; accept a String too for safety
+       def toUuid(value) {
+           return (value instanceof UUID) ? value : string2Uuid(value.toString().trim())
+       }
+
+       def addAttributeToAsset(assetUuid, attributeValue, attributeTypeUuid) {
+           if (attributeValue == null || attributeValue.toString().trim().isEmpty()) {
+               return;
+           }
+           attributeApi.addAttribute(AddAttributeRequest.builder()
+               .assetId(assetUuid)
+               .typeId(string2Uuid(attributeTypeUuid.toString().trim()))
+               .value(attributeValue.toString())
+               .build())
+       }
+
+       def addRelationsWithOneSourceAndMultipleTargetsToAsset(sourceUuid, relationTypeUuid, targetUuidList) {
+           if (targetUuidList == null || targetUuidList.isEmpty()) {
+               return;
+           }
+           def addRelationRequests = []
+           targetUuidList.each { t ->
+               addRelationRequests.add(AddRelationRequest.builder()
+                   .sourceId(sourceUuid)
+                   .targetId(toUuid(t))
+                   .typeId(string2Uuid(relationTypeUuid.toString().trim()))
+                   .build())
+           }
+           relationApi.addRelations(addRelationRequests)
+       }
+      ]]></script>
+    </scriptTask>
+
+    <endEvent id="endevent1" name="End">
+      <extensionElements>
+        <design:stencilid><![CDATA[EndNoneEvent]]></design:stencilid>
+      </extensionElements>
+    </endEvent>
+
+    <sequenceFlow id="flow0" sourceRef="startevent1" targetRef="getGlossaryDomains">
+      <extensionElements>
+        <design:stencilid><![CDATA[SequenceFlow]]></design:stencilid>
+      </extensionElements>
+    </sequenceFlow>
+    <sequenceFlow id="flow0b" sourceRef="getGlossaryDomains" targetRef="proposeTerm">
+      <extensionElements>
+        <design:stencilid><![CDATA[SequenceFlow]]></design:stencilid>
+      </extensionElements>
+    </sequenceFlow>
+    <sequenceFlow id="flow1" sourceRef="proposeTerm" targetRef="createAsset">
+      <extensionElements>
+        <design:stencilid><![CDATA[SequenceFlow]]></design:stencilid>
+      </extensionElements>
+    </sequenceFlow>
+    <sequenceFlow id="flow2" sourceRef="createAsset" targetRef="endevent1">
+      <extensionElements>
+        <design:stencilid><![CDATA[SequenceFlow]]></design:stencilid>
+      </extensionElements>
+    </sequenceFlow>
+  </process>
+
+  <bpmndi:BPMNDiagram id="BPMNDiagram_Collaboration">
+    <bpmndi:BPMNPlane bpmnElement="Collaboration" id="BPMNPlane_Collaboration">
+      <bpmndi:BPMNShape bpmnElement="pool1" id="BPMNShape_pool1">
+        <omgdc:Bounds height="150.0" width="720.0" x="90.0" y="40.0"></omgdc:Bounds>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="lane1" id="BPMNShape_lane1">
+        <omgdc:Bounds height="150.0" width="690.0" x="120.0" y="40.0"></omgdc:Bounds>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="startevent1" id="BPMNShape_startevent1">
+        <omgdc:Bounds height="30.0" width="30.0" x="160.0" y="100.0"></omgdc:Bounds>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="getGlossaryDomains" id="BPMNShape_getGlossaryDomains">
+        <omgdc:Bounds height="55.0" width="105.0" x="230.0" y="87.5"></omgdc:Bounds>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="proposeTerm" id="BPMNShape_proposeTerm">
+        <omgdc:Bounds height="55.0" width="105.0" x="380.0" y="87.5"></omgdc:Bounds>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="createAsset" id="BPMNShape_createAsset">
+        <omgdc:Bounds height="55.0" width="105.0" x="530.0" y="87.5"></omgdc:Bounds>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="endevent1" id="BPMNShape_endevent1">
+        <omgdc:Bounds height="28.0" width="28.0" x="700.0" y="101.0"></omgdc:Bounds>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge bpmnElement="flow0" id="BPMNEdge_flow0" flowable:sourceDockerX="15.0" flowable:sourceDockerY="15.0" flowable:targetDockerX="52.5" flowable:targetDockerY="27.5">
+        <omgdi:waypoint x="190.0" y="115.0"></omgdi:waypoint>
+        <omgdi:waypoint x="230.0" y="115.0"></omgdi:waypoint>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge bpmnElement="flow0b" id="BPMNEdge_flow0b" flowable:sourceDockerX="52.5" flowable:sourceDockerY="27.5" flowable:targetDockerX="52.5" flowable:targetDockerY="27.5">
+        <omgdi:waypoint x="335.0" y="115.0"></omgdi:waypoint>
+        <omgdi:waypoint x="380.0" y="115.0"></omgdi:waypoint>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge bpmnElement="flow1" id="BPMNEdge_flow1" flowable:sourceDockerX="52.5" flowable:sourceDockerY="27.5" flowable:targetDockerX="52.5" flowable:targetDockerY="27.5">
+        <omgdi:waypoint x="485.0" y="115.0"></omgdi:waypoint>
+        <omgdi:waypoint x="530.0" y="115.0"></omgdi:waypoint>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge bpmnElement="flow2" id="BPMNEdge_flow2" flowable:sourceDockerX="52.5" flowable:sourceDockerY="27.5" flowable:targetDockerX="14.0" flowable:targetDockerY="14.0">
+        <omgdi:waypoint x="635.0" y="115.0"></omgdi:waypoint>
+        <omgdi:waypoint x="700.0" y="115.0"></omgdi:waypoint>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>
